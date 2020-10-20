@@ -425,6 +425,21 @@ class Hub(with_metaclass(HubMeta)):  # type: ignore
             new_crumb = crumb
 
         if new_crumb is not None:
+            bad_keys = set(new_crumb.keys()) - {
+                "type",
+                "category",
+                "message",
+                "data",
+                "level",
+                "timestamp",
+            }
+            if bad_keys:
+                logger.warning(
+                    "Invalid keys found in breadcrumb: {bad_keys}. "
+                    "Please put all arbitrary data in the breadcrumb's 'data' entry.".format(
+                        bad_keys=str(bad_keys)
+                    )
+                )
             scope._breadcrumbs.append(new_crumb)
         else:
             logger.info("before breadcrumb dropped breadcrumb (%s)", crumb)
