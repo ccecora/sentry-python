@@ -17,6 +17,12 @@ from sentry_sdk import (
 
 from sentry_sdk.integrations import _AUTO_ENABLING_INTEGRATIONS
 from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.utils import logger
+
+try:
+    from unittest import mock  # python 3.3 and above
+except ImportError:
+    import mock  # python < 3.3
 
 
 def test_processors(sentry_init, capture_events):
@@ -131,6 +137,28 @@ def test_breadcrumb_arguments(sentry_init, capture_events):
     assert_hint.clear()
     add_breadcrumb(foo=42)
     add_breadcrumb(crumb=dict(foo=42))
+
+
+@pytest.mark.parametrize("bad_keys", [[], ["dogs", "are", "great"]])
+def test_breadcrumb_key_validation(
+    sentry_init, bad_keys, StringContaining  # noqa: N803
+):
+    sentry_init()
+
+    with mock.patch.object(logger, "warning", mock.Mock()):
+        # create a breadcrumb with some good (and potentially some bad) keys
+        crumb = {key: None for key in bad_keys}
+        crumb.update({"type": "good", "category": "dog"})
+        add_breadcrumb(crumb)
+
+        capture_message("Sit. Stay. Roll over.")
+
+        if bad_keys:
+            logger.warning.assert_any_call(
+                StringContaining("Invalid keys found in breadcrumb")
+            )
+        else:
+            assert logger.warning.called is False
 
 
 def test_push_scope(sentry_init, capture_events):
