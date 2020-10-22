@@ -341,7 +341,7 @@ def string_containing_matcher():
 
     Used like this:
 
-    >>> f = mock.Mock(return_value=None)
+    >>> f = mock.Mock()
     >>> f("dogs are great")
     >>> f.assert_any_call("dogs") # will raise AssertionError
     Traceback (most recent call last):
@@ -374,7 +374,7 @@ def dictionary_containing_matcher():
 
     Used like this:
 
-    >>> f = mock.Mock(return_value=None)
+    >>> f = mock.Mock()
     >>> f({"dogs": "yes", "cats": "maybe"})
     >>> f.assert_any_call({"dogs": "yes"}) # will raise AssertionError
     Traceback (most recent call last):
@@ -391,6 +391,74 @@ def dictionary_containing_matcher():
             if not isinstance(test_dict, dict):
                 return False
 
-            return all(test_dict.get(key) == self.subdict[key] for key in self.subdict)
+            # have to test self == other (rather than vice-versa) in case
+            # any of the values in self.subdict is another matcher with a custom
+            # __eq__ method (in LHS == RHS, LHS's __eq__ is tried before RHS's)
+            return all(self.subdict[key] == test_dict.get(key) for key in self.subdict)
 
     return DictionaryContaining
+
+
+@pytest.fixture(name="ObjectDescribedBy")
+def object_described_by_matcher():
+    """
+    An object which matches any other object with the given properties.
+
+    Available properties currently are "type" (a type object) and "attrs" (a
+    list of strings or a dictionary).
+
+    Useful for assert_called_with, assert_any_call, etc.
+
+    Used like this:
+
+    >>> class Dog(object):
+    ...     pass
+    ...
+    >>> maisey = Dog()
+    >>> maisey.name = "Maisey"
+    >>> maisey.age = 7
+    >>> f = mock.Mock()
+    >>> f(maisey)
+    >>> f.assert_any_call(ObjectDescribedBy(type=Dog)) # no AssertionError
+    >>> f.assert_any_call(ObjectDescribedBy(attrs={"name": "Maisey"})) # no AssertionError
+    """
+
+    class ObjectDescribedBy(object):
+        def __init__(self, type=None, attrs=None):
+            self.type = type
+            self.attrs = attrs
+
+        def __eq__(self, test_obj):
+            assert (
+                self.type or self.attrs
+            ), "Can't compare to empty ObjectDescribedBy instance"
+
+            if self.type:
+                if not isinstance(test_obj, self.type):
+                    return False
+
+            # all checks here done with getattr rather than dir() or __dict__
+            # because dir() isn't guaranteed to be complete and __dict__ might
+            # not exist
+            if self.attrs:
+                # attributes must exist
+                if isinstance(self.attrs, list):
+                    try:
+                        (getattr(test_obj, attr_name) for attr_name in self.attrs)
+                    except AttributeError:  # missing attribute
+                        return False
+
+                # attributes must exist AND values must match
+                if isinstance(self.attrs, dict):
+                    try:
+                        if any(
+                            getattr(test_obj, attr_name) != attr_value
+                            for attr_name, attr_value in self.attrs.items()
+                        ):
+                            return False  # wrong attribute value
+                    except AttributeError:  # missing attribute
+                        return False
+
+            return True
+
+    return ObjectDescribedBy
